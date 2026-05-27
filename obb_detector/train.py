@@ -1,0 +1,171 @@
+"""Training entry point for the one-stage OBB detector.
+
+AMP train/validate loops with pretrained-backbone loading, optional DataParallel,
+AdamW and a cosine LR schedule.
+
+Run:  python -m obb_detector.train
+"""
+
+import os
+
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.amp import GradScaler, autocast
+from torch.utils.data import DataLoader
+from tqdm import tqdm
+
+import config
+from common.backbone import GhostTriRemoteXProPP
+from common.classes import DOTA_CLASSES
+from common.model_utils import print_model_stats
+from .anchors import generate_rotated_anchors
+from .dataset import DOTADataset, collate_fn
+from .detector import RemoteDetector
+from .fpn import FPN
+from .head import RotatedDetectionHead
+from .loss import DetectionLoss
+
+# Anchor config: one scale per FPN level, shared ratios and angles.
+# A = 1 scale * 3 ratios * 3 angles = 9 anchors per location.
+LEVEL_SCALES = [[32], [64], [128]]
+ANCHOR_RATIOS = [0.5, 1.0, 2.0]
+ANCHOR_ANGLES = [-60, 0, 60]
+NUM_ANCHORS = len(LEVEL_SCALES[0]) * len(ANCHOR_RATIOS) * len(ANCHOR_ANGLES)
+
+
+def train_epoch(model, dataloader, optimizer, criterion, device, anchors_per_level,
+                epoch, total_epochs, scaler):
+    model.train()
+    totals = [0.0, 0.0, 0.0, 0.0]  # loss, cls, bbox, obj
+    pbar = tqdm(dataloader, desc=f"Epoch {epoch}/{total_epochs} [Train]", leave=False)
+    for images, targets in pbar:
+        images = images.to(device)
+        optimizer.zero_grad()
+        with autocast(device_type=device.type):
+            predictions = model(images)
+            loss_dict = criterion(predictions, targets, anchors_per_level, device)
+            loss = loss_dict["total_loss"]
+        scaler.scale(loss).backward()
+        scaler.unscale_(optimizer)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10.0)
+        scaler.step(optimizer)
+        scaler.update()
+
+        totals[0] += loss.item()
+        totals[1] += loss_dict["cls_loss"].item()
+        totals[2] += loss_dict["bbox_loss"].item()
+        totals[3] += loss_dict["obj_loss"].item()
+        pbar.set_postfix({
+            "Loss": f"{loss.item():.4f}",
+            "Cls": f"{loss_dict['cls_loss'].item():.4f}",
+            "BBox": f"{loss_dict['bbox_loss'].item():.4f}",
+            "Obj": f"{loss_dict['obj_loss'].item():.4f}",
+        })
+    n = len(dataloader)
+    return tuple(t / n for t in totals)
+
+
+@torch.no_grad()
+def validate(model, dataloader, criterion, device, anchors_per_level):
+    model.eval()
+    totals = [0.0, 0.0, 0.0, 0.0]
+    for images, targets in dataloader:
+        images = images.to(device)
+        loss_dict = criterion(model(images), targets, anchors_per_level, device)
+        totals[0] += loss_dict["total_loss"].item()
+        totals[1] += loss_dict["cls_loss"].item()
+        totals[2] += loss_dict["bbox_loss"].item()
+        totals[3] += loss_dict["obj_loss"].item()
+    n = len(dataloader)
+    return tuple(t / n for t in totals)
+
+
+def build_model(device, img_size):
+    """Build detector and return (model, feature_sizes)."""
+    backbone = GhostTriRemoteXProPP(num_classes=200, width_mult=1.0)
+    if os.path.exists(config.PRETRAINED_BACKBONE):
+        state = torch.load(config.PRETRAINED_BACKBONE, map_location="cpu")
+        # Drop the classification head: detection doesn't use fc, and its shape
+        # depends on the pretraining class count (strict=False won't skip a
+        # size mismatch on a present key).
+        state = {k: v for k, v in state.items() if not k.startswith("fc.")}
+        backbone.load_state_dict(state, strict=False)
+        print(f"Loaded pretrained backbone from {config.PRETRAINED_BACKBONE}")
+    else:
+        print(f"[warn] pretrained backbone not found at {config.PRETRAINED_BACKBONE}; "
+              "using random init.")
+
+    # Probe backbone output shapes to size the FPN and anchors.
+    dummy = torch.randn(1, 3, img_size, img_size)
+    with torch.no_grad():
+        feats = backbone.forward_features(dummy)
+    fpn_in_channels = [f.shape[1] for f in feats]
+    feature_sizes = [(f.shape[2], f.shape[3]) for f in feats]
+
+    neck = FPN(fpn_in_channels, out_channels=128)
+    head = RotatedDetectionHead(num_classes=len(DOTA_CLASSES), num_anchors=NUM_ANCHORS, in_channels=128)
+    model = RemoteDetector(backbone, neck, head).to(device)
+    return model, feature_sizes
+
+
+def main():
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    num_gpus = torch.cuda.device_count()
+    img_size = config.IMG_SIZE
+
+    train_loader = DataLoader(
+        DOTADataset(config.DATA_ROOT, "train", img_size),
+        batch_size=config.BATCH_SIZE, shuffle=True, num_workers=config.NUM_WORKERS,
+        collate_fn=collate_fn, pin_memory=True,
+    )
+    val_loader = DataLoader(
+        DOTADataset(config.DATA_ROOT, "val", img_size),
+        batch_size=config.BATCH_SIZE, shuffle=False, num_workers=config.NUM_WORKERS,
+        collate_fn=collate_fn, pin_memory=True,
+    )
+    print(f"Train: {len(train_loader.dataset)}  Val: {len(val_loader.dataset)}  GPUs: {num_gpus}")
+
+    model, feature_sizes = build_model(device, img_size)
+    print_model_stats(model, input_size=(1, 3, img_size, img_size), device=device)
+    if num_gpus > 1:
+        model = nn.DataParallel(model, device_ids=list(range(num_gpus)))
+        print(f"Using DataParallel over {num_gpus} GPUs")
+
+    # Strides from actual feature-map sizes; one scale per level (9 anchors/loc).
+    strides = [img_size // h for (h, w) in feature_sizes]
+    anchors_per_level = generate_rotated_anchors(
+        feature_sizes, strides,
+        level_scales=LEVEL_SCALES, anchor_ratios=ANCHOR_RATIOS,
+        anchor_angles=ANCHOR_ANGLES, device=device,
+    )
+
+    criterion = DetectionLoss(num_classes=len(DOTA_CLASSES))
+    optimizer = optim.AdamW(model.parameters(), lr=config.LEARNING_RATE * max(1, num_gpus),
+                            weight_decay=config.WEIGHT_DECAY)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=config.NUM_EPOCHS, eta_min=1e-6)
+    scaler = GradScaler(device.type)
+
+    save_dir = config.ensure_models_dir()
+    best_val_loss = float("inf")
+    for epoch in range(1, config.NUM_EPOCHS + 1):
+        train_loss, *_ = train_epoch(model, train_loader, optimizer, criterion, device,
+                                     anchors_per_level, epoch, config.NUM_EPOCHS, scaler)
+        val_loss, val_cls, val_bbox, val_obj = validate(model, val_loader, criterion,
+                                                         device, anchors_per_level)
+        scheduler.step()
+        print(f"Epoch {epoch:03d}: Train Loss={train_loss:.4f}, Val Loss={val_loss:.4f} | "
+              f"Cls={val_cls:.4f}, BBox={val_bbox:.4f}, Obj={val_obj:.4f}")
+
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            torch.save(model.state_dict(), os.path.join(save_dir, "best_detector.pth"))
+            print(f"  saved new best (val_loss {val_loss:.4f})")
+        if epoch % 10 == 0:
+            torch.save(model.state_dict(), os.path.join(save_dir, f"checkpoint_epoch_{epoch}.pth"))
+
+    print(f"Training complete. Best val loss: {best_val_loss:.4f}")
+
+
+if __name__ == "__main__":
+    main()
