@@ -9,8 +9,11 @@ tqdm
 # mmcv>=2.0          # preferred: common.rotated_ops uses mmcv.ops.box_iou_rotated
 shapely              # CPU fallback for rotated IoU
 
-# FLOPs reporting (optional)
+# FLOPs reporting
 thop
+
+# Backbone pretraining: local logging
+tensorboard
 
 # Faster R-CNN experiment
 opencv-python

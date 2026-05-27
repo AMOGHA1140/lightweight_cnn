@@ -50,31 +50,66 @@ resized image and converts each quadrilateral to `(cx, cy, w, h, θ)`.
 
 ## 1. Pretrain the backbone
 
-The detector initialises from a backbone trained on image classification. The
-dataset must be an `ImageFolder` with `train/` and `val/` splits:
+The detector initialises from a backbone trained on ImageNet-1k classification.
+The dataset must be an `ImageFolder` with `train/` and `val/` splits:
 
 ```
-<data-dir>/train/<class>/*.jpg
-<data-dir>/val/<class>/*.jpg
+<data-dir>/train/<class>/*.JPEG
+<data-dir>/val/<class>/*.JPEG
 ```
 
 ```bash
 python pretrain_backbone.py \
-    --data-dir /path/to/classification_dataset \
-    --num-classes 200 \
-    --epochs 100 --batch-size 64 --lr 1e-3 \
-    --out ./models/backbone_pretrained.pth
+    --data-dir /path/to/imagenet \
+    --out-dir backbone_weights \
+    --epochs 100 --batch-size 256 --lr 1e-3
 ```
 
-It uses AdamW with a cosine schedule and AMP, and saves the best checkpoint by
-validation accuracy. `--num-classes` defaults to 200; if it disagrees with the
-dataset, the dataset's class count is used. The saved file is the full backbone
-state dict.
+Recipe: RandomResizedCrop + horizontal flip + RandAugment + ColorJitter +
+RandomErasing, label-smoothed cross-entropy, AdamW (no weight decay on norm/bias),
+linear warmup → cosine decay, AMP, and a weight EMA. Each epoch the live and EMA
+models are both evaluated and the better one becomes the saved "best". `--num-classes`
+defaults to 200; the dataset's actual class count is always used. Multiple GPUs are
+used automatically via `DataParallel`.
+
+### Output directory (`--out-dir`)
+
+```
+<out-dir>/
+  config.json        # resolved run arguments (reloaded on resume)
+  metrics.csv        # per-epoch train/val/EMA loss & accuracy (crash-safe)
+  tb/                # TensorBoard events: per-epoch curves + per-step train loss
+                     #   (run: tensorboard --logdir <out-dir>/tb)
+  best/
+    checkpoint.pth   # record of the best epoch
+    backbone.pth     # bare backbone weights for the detector
+  epoch_<n>/
+    checkpoint.pth   # full resumable state: model, optimizer, scheduler, scaler
+```
+
+A full checkpoint is written every `--save-every` epochs (default 1 = every epoch).
+
+### Resuming
+
+```bash
+python pretrain_backbone.py --data-dir /path/to/imagenet --out-dir backbone_weights --resume auto
+```
+
+`--resume auto` picks the latest `epoch_<n>/`; you can also pass an explicit
+checkpoint path or epoch directory. Run arguments are reloaded from `config.json`
+(pass `--epochs N` to extend training). Model/optimizer/scheduler/AMP-scaler are
+restored exactly; the EMA is re-seeded from the resumed weights and re-accumulates
+(pass `--save-ema-in-ckpt` during training for exact EMA resume).
+
+Key flags: `--save-every`, `--warmup-epochs`, `--ema-decay`, `--no-ema`,
+`--rand-aug-magnitude` (≤0 disables), `--label-smoothing`, `--seed`,
+`--amp-dtype {bfloat16,float16}` (default `bfloat16`; bf16 needs no loss scaling
+and falls back to fp16 if the GPU lacks bf16 support).
 
 ## 2. Train the OBB detector
 
 ```bash
-export PRETRAINED_BACKBONE=./models/backbone_pretrained.pth
+export PRETRAINED_BACKBONE=backbone_weights/best/backbone.pth
 python -m obb_detector.train
 ```
 
