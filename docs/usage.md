@@ -1,7 +1,7 @@
 # Usage
 
-All commands run from the project root so that `config`, `common`, and the pipeline
-packages import as top-level modules.
+All commands run from the project root so that `common` and the pipeline packages
+import as top-level modules.
 
 ## Dependencies
 
@@ -9,26 +9,32 @@ packages import as top-level modules.
 pip install -r requirements.txt
 ```
 
-Rotated IoU needs **one** of:
-- `mmcv` (preferred — CUDA/CPU op, also enables `nms_rotated` for inference), or
-- `shapely` (CPU fallback).
+`mmcv` is **required** for rotated IoU + NMS (loss assignment, NMS, mAP). Install it
+matched to your torch/CUDA: `pip install -U openmim && mim install mmcv`. The code
+raises a clear error if mmcv is missing (no slow CPU fallback).
 
-## Configuration (`config.py`)
+## Configuration (YAML, no env vars)
 
-Every value can be overridden by an environment variable of the same name.
+All configuration is YAML under `configs/`, loaded by `common/config.py`. There is no
+`config.py` module and no environment-variable configuration.
 
-| Name | Default | Meaning |
-|---|---|---|
-| `DATA_ROOT` | `./data/dota_dataset` | DOTA dataset root |
-| `MODELS_DIR` | `./models` | checkpoint output directory |
-| `PRETRAINED_BACKBONE` | `${MODELS_DIR}/backbone_pretrained.pth` | backbone weights loaded by the detector |
-| `IMG_SIZE` | `1024` | OBB detector input resolution |
-| `BATCH_SIZE` | `4` | |
-| `NUM_WORKERS` | `0` | DataLoader workers |
-| `NUM_EPOCHS` | `100` | |
-| `LEARNING_RATE` | `1e-3` | |
-| `WEIGHT_DECAY` | `1e-4` | |
-| `NORM_MEAN` / `NORM_STD` | ImageNet | normalisation |
+- `configs/base.yaml` holds every default, grouped under `data`, `model`, `anchors`,
+  `train`, `paths`, `experiment`.
+- An experiment file sets `_base_: ../base.yaml` and overrides only the keys it
+  changes; bases are deep-merged and the experiment wins.
+
+```yaml
+# configs/exp/gaconv_neck.yaml
+_base_: ../base.yaml
+experiment: {name: gaconv_neck, why: "...", method: "ResNet-50 / FPN-GAConv"}
+model: {neck: {smooth_conv: gaconv}}
+```
+
+Key fields: `data.{root,img_size,batch_size,num_workers}`,
+`model.backbone.{name,pretrained,frozen_stages,norm_eval}` (name: `resnet50` | `custom`),
+`model.neck.{out_channels,smooth_conv}` (smooth_conv: `standard` | `gaconv`),
+`train.{epochs,lr,weight_decay,grad_clip}`, `paths.{pretrained_backbone,runs_dir}`.
+Components are built by name through `common/registry.py`.
 
 ## DOTA dataset layout
 
@@ -104,23 +110,37 @@ restored exactly; the EMA is re-seeded from the resumed weights and re-accumulat
 Key flags: `--save-every`, `--warmup-epochs`, `--ema-decay`, `--no-ema`,
 `--rand-aug-magnitude` (≤0 disables), `--label-smoothing`, `--seed`,
 `--amp-dtype {bfloat16,float16}` (default `bfloat16`; bf16 needs no loss scaling
-and falls back to fp16 if the GPU lacks bf16 support).
+and falls back to fp16 if the GPU lacks bf16 support). `--config <yaml>` optionally
+seeds defaults from a `pretrain:` block (CLI flags still win); the argparse interface
+is otherwise unchanged.
 
 ## 2. Train the OBB detector
 
 ```bash
-export PRETRAINED_BACKBONE=backbone_weights/best/backbone.pth
-python -m obb_detector.train
+python -m obb_detector.train --config configs/exp/gaconv_neck.yaml   # or baseline.yaml
 ```
 
-`build_model` loads the pretrained backbone when the file exists (the classification
-`fc` layer is dropped, since the detector does not use it) and falls back to random
-initialisation otherwise. Training uses AMP, gradient clipping, AdamW, and a cosine
-schedule, with `DataParallel` across multiple GPUs. It writes `best_detector.pth`
-(best validation loss) and periodic `checkpoint_epoch_{n}.pth` to `MODELS_DIR`.
+The config selects the backbone (`resnet50` works out of the box; `custom` needs the
+pretrained weights from step 1 at `paths.pretrained_backbone`), neck, and
+hyperparameters. Training uses AMP, gradient clipping, AdamW, and a cosine schedule,
+with `DataParallel` across multiple GPUs. Each run writes a self-contained
+`runs/<experiment.name>_<YYYY_MM_DD-HHmm>/` holding the resolved `config.yaml`,
+`meta.json` (git commit + command), `NOTES.md`, `checkpoints/{best,last}.pth`, and
+`tb/` TensorBoard logs, and appends a row to `runs/README.md`. Reproduce a past run
+with `--config runs/<run>/config.yaml`.
 
 ## 3. Evaluate
 
-`obb_detector/evaluate.py` provides `evaluate_map(model, dataloader, device,
-anchors_per_level, class_names)`, which reports per-class AP and the mAP using the
-decode + rotated-NMS path.
+mAP (per-class AP + mean) is computed during training every `train.eval_interval`
+epochs, logged to TensorBoard (`metrics/val_mAP`, `AP/<class>`) and `metrics.csv`, and
+used to pick `checkpoints/best.pth`. To evaluate a checkpoint standalone:
+
+```bash
+python -m obb_detector.evaluate --config configs/exp/gaconv_neck.yaml \
+    --checkpoint runs/<run>/checkpoints/best.pth --split val
+```
+
+This prints the per-class AP table + mAP and writes `eval.json` next to the checkpoint.
+Thresholds come from the config `eval:` block, overridable via
+`--conf-thresh / --iou-thresh / --nms-thresh`. `evaluate_map(...)` remains importable
+for programmatic use.

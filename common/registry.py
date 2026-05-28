@@ -72,6 +72,8 @@ def build_neck(cfg, in_channels):
 
 
 def build_head(cfg):
+    head_cfg = cfg.model.head
     return HEADS.get("rotated")(num_classes=NUM_CLASSES,
-                                num_anchors=cfg.model.head.num_anchors,
-                                in_channels=cfg.model.neck.out_channels)
+                                num_anchors=head_cfg.num_anchors,
+                                in_channels=cfg.model.neck.out_channels,
+                                prior_prob=head_cfg.get("prior_prob", 0.01))

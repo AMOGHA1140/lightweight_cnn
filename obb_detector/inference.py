@@ -5,7 +5,7 @@ Turns raw head outputs into oriented boxes in image coordinates:
   2. sigmoid cls and obj, confidence = obj * max-cls,
   3. threshold on confidence,
   4. decode regression deltas against anchors (``decode_obb``),
-  5. per-class rotated NMS (mmcv ``nms_rotated`` if available, else greedy).
+  5. per-class rotated NMS (mmcv ``nms_rotated``; mmcv is required).
 
 ``decode_predictions`` returns one ``(boxes, scores, labels)`` triple per image.
 """
@@ -13,13 +13,16 @@ Turns raw head outputs into oriented boxes in image coordinates:
 import numpy as np
 import torch
 
-from common.rotated_ops import box_iou_rotated
-
-try:  # Preferred: field-standard CUDA/CPU rotated NMS.
+try:
     from mmcv.ops import nms_rotated as _mmcv_nms_rotated
     _HAS_MMCV_NMS = True
 except Exception:  # pragma: no cover - depends on environment
     _HAS_MMCV_NMS = False
+
+_MMCV_REQUIRED = (
+    "mmcv is required for rotated NMS. Install it on the training machine, e.g.\n"
+    "  pip install -U openmim && mim install mmcv"
+)
 
 
 def decode_obb(deltas, anchors):
@@ -35,28 +38,13 @@ def decode_obb(deltas, anchors):
     return torch.stack([cx, cy, w, h, angle], dim=1)
 
 
-def _greedy_nms_rotated(boxes, scores, iou_thresh):
-    """Greedy rotated NMS via ``box_iou_rotated``. Returns kept indices (tensor)."""
-    keep = []
-    idxs = scores.argsort(descending=True)
-    while idxs.numel() > 0:
-        i = idxs[0]
-        keep.append(i.item())
-        if idxs.numel() == 1:
-            break
-        rest = idxs[1:]
-        ious = box_iou_rotated(boxes[i].unsqueeze(0), boxes[rest])[0]
-        idxs = rest[ious <= iou_thresh]
-    return torch.as_tensor(keep, dtype=torch.long, device=boxes.device)
-
-
 def _nms_rotated(boxes, scores, iou_thresh):
     if boxes.numel() == 0:
         return torch.zeros((0,), dtype=torch.long, device=boxes.device)
-    if _HAS_MMCV_NMS:
-        _, keep = _mmcv_nms_rotated(boxes.float(), scores.float(), iou_thresh)
-        return keep
-    return _greedy_nms_rotated(boxes, scores, iou_thresh)
+    if not _HAS_MMCV_NMS:
+        raise ImportError(_MMCV_REQUIRED)
+    _, keep = _mmcv_nms_rotated(boxes.float(), scores.float(), iou_thresh)
+    return keep
 
 
 def decode_predictions(preds, anchors_per_level, conf_thresh=0.05, nms_thresh=0.1,

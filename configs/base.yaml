@@ -18,6 +18,7 @@ model:
     smooth_conv: standard   # standard | gaconv
   head:
     num_anchors: 9
+    prior_prob: 0.01        # RetinaNet cls/obj bias init
 
 anchors:
   level_scales: [[32], [64], [128]]
@@ -31,6 +32,15 @@ train:
   optimizer: adamw
   scheduler: cosine
   grad_clip: 10.0
+  warmup_epochs: 3
+  eta_min: 1.0e-6
+  eval_interval: 1          # run mAP validation every N epochs (and on the last)
+  seed: 42
+
+eval:
+  iou_thresh: 0.5
+  conf_thresh: 0.05
+  nms_thresh: 0.1
 
 paths:
   pretrained_backbone: ./models/backbone_pretrained.pth

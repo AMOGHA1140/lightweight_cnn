@@ -5,9 +5,9 @@ numpy
 Pillow
 tqdm
 
-# OBB detector: rotated IoU. Install ONE of these (mmcv preferred -> CUDA op).
-# mmcv>=2.0          # preferred: common.rotated_ops uses mmcv.ops.box_iou_rotated
-shapely              # CPU fallback for rotated IoU
+# OBB detector: rotated IoU + NMS (required). Install via openmim to match torch/CUDA:
+#   pip install -U openmim && mim install mmcv
+mmcv>=2.0
 
 # FLOPs reporting
 thop

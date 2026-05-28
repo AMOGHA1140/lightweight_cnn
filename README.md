@@ -11,13 +11,15 @@ experimental two-stage axis-aligned detector and an Ultralytics YOLO benchmark.
 ## Layout
 
 ```
-config.py              # dataset/model paths + hyperparameters (edit this)
-pretrain_backbone.py   # classification pretraining for the backbone
-common/                # shared: backbone, DOTA classes, rotated IoU, model utils
+configs/               # YAML configs: base.yaml + exp/*.yaml (no env vars)
+pretrain_backbone.py   # classification pretraining for the custom backbone
+common/                # shared: config loader, registry, run dirs, backbones, GAConv, rotated IoU
 obb_detector/          # primary one-stage oriented (OBB) detector
 faster_rcnn/           # experimental two-stage axis-aligned detector (reference only)
 yolo_compare/          # Ultralytics YOLO benchmark (comparison only)
+runs/                  # per-run outputs (gitignored except runs/README.md)
 docs/                  # detailed documentation
+CLAUDE.md              # entry point for agents; claude_notes/SETUP.md for full setup
 ```
 
 ## Pipelines
@@ -30,22 +32,27 @@ docs/                  # detailed documentation
 
 ## Quick start
 
-Run everything from the project root (so `config` and `common` are importable):
+Run everything from the project root. Full setup (clone, env, data) is in
+[claude_notes/SETUP.md](claude_notes/SETUP.md).
 
 ```bash
-pip install -r requirements.txt          # install mmcv (preferred) or shapely for rotated IoU
-export DOTA_DATA_ROOT=/path/to/dota_dataset   # or edit config.py
+pip install -r requirements.txt          # then: pip install -U openmim && mim install mmcv
+# place DOTA at configs/base.yaml -> data.root (default ./data/dota_dataset)
 
-# 1) pretrain the backbone on a classification dataset (ImageFolder layout)
-python pretrain_backbone.py --data-dir /path/to/classification_dataset --num-classes 200
+# train the OBB detector (config selects backbone / neck / etc.)
+python -m obb_detector.train --config configs/exp/baseline.yaml      # ResNet-50 + standard FPN
+python -m obb_detector.train --config configs/exp/gaconv_neck.yaml   # ResNet-50 + GAConv neck
 
-# 2) train the OBB detector (loads the pretrained backbone if present)
-python -m obb_detector.train
-
-# 3) the secondary pipelines
+# the secondary pipelines
 python -m faster_rcnn.train
 python -m yolo_compare.benchmark
 ```
+
+Configuration is YAML only (`configs/base.yaml` + `configs/exp/*.yaml` overrides via a
+`_base_` key); there are no environment-variable settings. Each run writes a
+self-contained `runs/<name>_<timestamp>/` (config snapshot, checkpoints, TensorBoard,
+NOTES.md) and a row in `runs/README.md`. The custom backbone needs
+`pretrain_backbone.py` first; ResNet-50 works out of the box.
 
 ## Documentation
 

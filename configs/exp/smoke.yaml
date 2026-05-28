@@ -1,0 +1,23 @@
+_base_: ../base.yaml
+
+# Fast end-to-end smoke test: ResNet-50 + GAConv neck + head + loss + mAP.
+# Point data.root at a SMALL subset of DOTA (a handful of train/val images) so a
+# couple of epochs finish in minutes; this only checks the pipeline runs, not accuracy.
+
+experiment:
+  name: smoke
+  why: "Pipeline smoke test: ResNet-50 + GAConv neck runs end-to-end on a small subset."
+  method: "ResNet-50 / FPN-GAConv"
+
+data:
+  img_size: 512
+  batch_size: 2
+
+train:
+  epochs: 2
+  warmup_epochs: 0
+  eval_interval: 1
+
+model:
+  neck:
+    smooth_conv: gaconv

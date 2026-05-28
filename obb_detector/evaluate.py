@@ -14,6 +14,7 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
+from common.classes import DOTA_CLASSES
 from common.rotated_ops import box_iou_rotated
 from .inference import decode_predictions
 
@@ -30,16 +31,23 @@ def compute_ap(recall, precision):
 
 @torch.no_grad()
 def evaluate_map(model, dataloader, device, anchors_per_level, class_names,
-                 iou_thresh=0.5, conf_thresh=0.05):
+                 iou_thresh=0.5, conf_thresh=0.05, nms_thresh=0.1, criterion=None):
+    """Returns ``(aps, mAP, val_loss)``. ``val_loss`` is the mean total loss when
+    ``criterion`` is given (computed in the same forward pass), else ``None``."""
     model.eval()
     all_detections = defaultdict(list)   # class -> [(image_id, score, box)]
     all_annotations = defaultdict(list)  # class -> [(image_id, box)]
+    loss_sum, n_batches = 0.0, 0
 
     for idx, (images, targets) in enumerate(tqdm(dataloader, desc="Evaluating mAP")):
         images = images.to(device)
         preds = model(images)
+        if criterion is not None:
+            loss_sum += criterion(preds, targets, anchors_per_level, device)["total_loss"].item()
+            n_batches += 1
         decoded = decode_predictions(preds, anchors_per_level,
-                                     conf_thresh=conf_thresh, device=device)
+                                     conf_thresh=conf_thresh, nms_thresh=nms_thresh,
+                                     device=device)
         for b in range(images.shape[0]):
             image_id = idx * dataloader.batch_size + b
             gt_boxes = targets[b]["boxes"].cpu().numpy()
@@ -92,8 +100,66 @@ def evaluate_map(model, dataloader, device, anchors_per_level, class_names,
     valid_aps = [ap for ap in aps.values() if not np.isnan(ap)]
     mAP = float(np.mean(valid_aps)) if valid_aps else 0.0
 
+    val_loss = (loss_sum / n_batches) if criterion is not None and n_batches else None
+
     print("Class-wise AP:")
     for cls, ap in aps.items():
         print(f"{cls}: {ap:.4f}")
     print(f"Overall mAP: {mAP:.4f}")
-    return aps, mAP
+    return aps, mAP, val_loss
+
+
+def main():
+    import argparse
+    import json
+    from pathlib import Path
+
+    import torch
+    from torch.utils.data import DataLoader
+
+    from common.config import load_config
+    from common.train_utils import load_checkpoint, load_model_weights
+    from .build import build_anchors, build_model
+    from .dataset import DOTADataset, collate_fn
+
+    parser = argparse.ArgumentParser(description="Evaluate an OBB detector checkpoint (mAP).")
+    parser.add_argument("--config", default="configs/base.yaml")
+    parser.add_argument("--checkpoint", required=True, help="Path to a .pth checkpoint.")
+    parser.add_argument("--split", default="val", choices=["val", "train"],
+                        help="Labelled split to evaluate on.")
+    parser.add_argument("--conf-thresh", type=float, default=None)
+    parser.add_argument("--iou-thresh", type=float, default=None)
+    parser.add_argument("--nms-thresh", type=float, default=None)
+    args = parser.parse_args()
+
+    cfg = load_config(args.config)
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    img_size = cfg.data.img_size
+
+    model, feature_sizes = build_model(cfg, device, img_size)
+    load_model_weights(model, load_checkpoint(args.checkpoint))
+    anchors = build_anchors(cfg, feature_sizes, img_size, device)
+
+    loader = DataLoader(
+        DOTADataset(cfg.data.root, args.split, img_size),
+        batch_size=cfg.data.batch_size, shuffle=False, num_workers=cfg.data.num_workers,
+        collate_fn=collate_fn, pin_memory=True,
+    )
+
+    conf = args.conf_thresh if args.conf_thresh is not None else cfg.eval.conf_thresh
+    iou = args.iou_thresh if args.iou_thresh is not None else cfg.eval.iou_thresh
+    nms = args.nms_thresh if args.nms_thresh is not None else cfg.eval.nms_thresh
+    aps, mAP, _ = evaluate_map(model, loader, device, anchors, DOTA_CLASSES,
+                               iou_thresh=iou, conf_thresh=conf, nms_thresh=nms)
+
+    out = Path(args.checkpoint).parent / "eval.json"
+    out.write_text(json.dumps({
+        "checkpoint": str(args.checkpoint), "split": args.split,
+        "mAP": mAP, "iou_thresh": iou, "conf_thresh": conf, "nms_thresh": nms,
+        "per_class_AP": {k: (None if v != v else float(v)) for k, v in aps.items()},
+    }, indent=2))
+    print(f"Wrote {out}")
+
+
+if __name__ == "__main__":
+    main()

@@ -35,7 +35,7 @@ Rules:
 ## 2. Run it
 
 ```
-/home/amogha/coding/pytorch_env/bin/python -m obb_detector.train --config configs/exp/<name>.yaml
+python -m obb_detector.train --config configs/exp/<name>.yaml
 ```
 
 This creates `runs/<name>_<YYYY_MM_DD-HHmm>/` containing:
@@ -67,7 +67,7 @@ placeholder — replace with the real metric once known). Keep that table succin
 Re-run an old experiment from its snapshot:
 
 ```
-/home/amogha/coding/pytorch_env/bin/python -m obb_detector.train --config runs/<run>/config.yaml
+python -m obb_detector.train --config runs/<run>/config.yaml
 ```
 
 Check `meta.json` for the git commit it was run at if results don't match.

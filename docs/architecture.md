@@ -5,11 +5,22 @@ The primary pipeline (`obb_detector/`) is a one-stage dense oriented detector:
 ```
 image [B,3,H,W]
   → backbone.forward_features → [C3, C4, C5]      (strides 8 / 16 / 32)
-  → FPN neck                  → 3 levels @ 128ch
+  → FPN neck                  → 3 levels @ out_channels (256 default)
   → RotatedDetectionHead      → (cls_outs, reg_outs, obj_outs) per level
 ```
 
 Oriented boxes use the 5-parameter form `(cx, cy, w, h, θ)` with `θ` in radians.
+
+The backbone is selected by config (`model.backbone.name`): `resnet50` (ImageNet,
+the current testbed) or `custom` (`GhostTriRemoteXProPP`, needs pretraining). Both
+expose `forward_features(x) -> [C3, C4, C5]`, so the neck/head/anchors are unchanged.
+
+## Backbone — `ResNet50Backbone` (`common/backbone_resnet.py`)
+
+The default testbed backbone: torchvision ResNet-50, ImageNet-pretrained, fine-tuned
+with `frozen_stages=1` (freeze stem + layer1) and `norm_eval=True` (BatchNorm frozen)
+per the mmdetection/mmrotate DOTA convention. `forward_features` returns `layer2/3/4`
+outputs (C3/C4/C5) = channels `[512, 1024, 2048]` at strides `[8, 16, 32]`.
 
 ## Backbone — `GhostTriRemoteXProPP` (`common/backbone.py`)
 
@@ -52,7 +63,11 @@ backbone pretraining.
 ## Neck — `FPN` (`obb_detector/fpn.py`)
 
 Top-down FPN over `[C3, C4, C5]`: 1×1 lateral conv → nearest-upsample + add →
-3×3 smooth, producing three feature maps at 128 channels each.
+smooth, producing three feature maps at `out_channels` (256 by default). The smooth
+stage is a standard 3×3 conv (`smooth_conv: standard`) or **GAConv**
+(`smooth_conv: gaconv`, `common/gaconv.py`) — a geometric adaptive conv that predicts
+per-location `(θ, σ_major, σ_minor)` and drives a depthwise deformable conv. GAConv is
+identity-initialised, so it starts equivalent to a depthwise 3×3 and learns to deviate.
 
 ## Anchors (`obb_detector/anchors.py`)
 
@@ -74,6 +89,9 @@ Three branches applied to every FPN level (`A` = anchors per location):
 - classification: 2×(conv3×3 + ReLU) → conv3×3 → `A·num_classes`
 - box regression: 1×(conv3×3 + ReLU) → conv3×3 → `A·5`
 - objectness: conv3×3 → `A`
+
+The cls/obj prediction biases use the RetinaNet prior-probability init
+(`-log((1-p)/p)`, `p = model.head.prior_prob`) so focal loss starts at a sane scale.
 
 ## Box encoding (`obb_detector/loss.py`, `obb_detector/inference.py`)
 
@@ -99,9 +117,8 @@ Per image, all levels/anchors are flattened, then:
 
 `decode_predictions` flattens all levels, applies `sigmoid` to cls/obj, computes
 confidence `= obj · max-class-prob`, thresholds, decodes via `decode_obb`, and runs
-per-class rotated NMS (`mmcv.ops.nms_rotated` if installed, otherwise a greedy
-fallback built on `box_iou_rotated`). It returns one `(boxes, scores, labels)`
-triple per image.
+per-class rotated NMS (`mmcv.ops.nms_rotated`; mmcv is required). It returns one
+`(boxes, scores, labels)` triple per image.
 
 ## Evaluation (`obb_detector/evaluate.py`)
 
@@ -112,5 +129,5 @@ the mean (mAP).
 ## Rotated geometry (`common/rotated_ops.py`)
 
 - `get_rotated_corners(boxes)`: `(cx, cy, w, h, θ)` → 4 corner points.
-- `box_iou_rotated(a, b)`: pairwise IoU via `mmcv.ops.box_iou_rotated` when
-  available, otherwise a `shapely` polygon-intersection fallback.
+- `box_iou_rotated(a, b)`: pairwise IoU via `mmcv.ops.box_iou_rotated` (mmcv required;
+  raises a clear error if missing).
