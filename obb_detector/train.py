@@ -1,6 +1,6 @@
 """Training entry point for the one-stage OBB detector.
 
-Config-driven (YAML). AMP train loop, optional DataParallel, AdamW with warmup +
+Config-driven (YAML). AMP train loop on a single GPU, AdamW with warmup +
 cosine schedule, mAP-based validation, and full-state checkpoints. Each run writes a
 self-contained dir under ``runs/`` (config snapshot, NOTES.md, meta.json, metrics.csv,
 checkpoints/, TensorBoard logs). Requires mmcv (rotated IoU/NMS).
@@ -15,7 +15,6 @@ import time
 from pathlib import Path
 
 import torch
-import torch.nn as nn
 import torch.optim as optim
 from torch.amp import autocast
 from torch.cuda.amp import GradScaler
@@ -85,7 +84,6 @@ def validate(model, dataloader, criterion, device, anchors_per_level):
 def main(cfg, resume_dir=None):
     seed_everything(cfg.train.seed)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    num_gpus = torch.cuda.device_count()
     img_size = cfg.data.img_size
 
     train_loader = DataLoader(
@@ -98,19 +96,16 @@ def main(cfg, resume_dir=None):
         batch_size=cfg.data.batch_size, shuffle=False, num_workers=cfg.data.num_workers,
         collate_fn=collate_fn, pin_memory=True,
     )
-    print(f"Train: {len(train_loader.dataset)}  Val: {len(val_loader.dataset)}  GPUs: {num_gpus}")
+    print(f"Train: {len(train_loader.dataset)}  Val: {len(val_loader.dataset)}  Device: {device}")
 
     model, feature_sizes = build_model(cfg, device, img_size)
     print_model_stats(model, input_size=(1, 3, img_size, img_size), device=device)
-    if num_gpus > 1:
-        model = nn.DataParallel(model, device_ids=list(range(num_gpus)))
-        print(f"Using DataParallel over {num_gpus} GPUs")
 
     anchors_per_level = build_anchors(cfg, feature_sizes, img_size, device)
 
     criterion = DetectionLoss(num_classes=len(DOTA_CLASSES))
     optimizer = optim.AdamW(build_param_groups(model, cfg.train.weight_decay),
-                            lr=cfg.train.lr * max(1, num_gpus))
+                            lr=cfg.train.lr)
     scheduler = build_scheduler(optimizer, cfg.train.epochs, cfg.train.warmup_epochs,
                                 eta_min=cfg.train.eta_min)
     scaler = GradScaler(device.type)

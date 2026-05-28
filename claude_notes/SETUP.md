@@ -84,6 +84,20 @@ python -m obb_detector.train --config configs/exp/baseline.yaml
 python -m obb_detector.train --config configs/exp/gaconv_neck.yaml
 ```
 
+Training is **single-GPU** (the model is small; no DataParallel/DDP). It uses `cuda:0`.
+On a multi-GPU box, pick the GPU with `CUDA_VISIBLE_DEVICES` so the chosen card becomes
+`cuda:0` — e.g. to train on the second GPU and leave the first alone:
+
+```bash
+# Linux/macOS
+CUDA_VISIBLE_DEVICES=1 python -m obb_detector.train --config configs/exp/gaconv_neck.yaml
+# Windows (cmd)
+set CUDA_VISIBLE_DEVICES=1 && python -m obb_detector.train --config configs/exp/gaconv_neck.yaml
+```
+
+To run two experiments at once, launch each on its own GPU in separate shells (one
+`CUDA_VISIBLE_DEVICES=0`, one `=1`) — cleaner and faster than splitting one run.
+
 ResNet-50 loads ImageNet weights on first run (small download), with
 `frozen_stages=1` + `norm_eval=True` (mmrotate DOTA convention). Validation computes
 **mAP** every `train.eval_interval` epochs (and on the last) and the best checkpoint is
