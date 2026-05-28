@@ -36,7 +36,11 @@ Run everything from the project root. Full setup (clone, env, data) is in
 [claude_notes/SETUP.md](claude_notes/SETUP.md).
 
 ```bash
-pip install -r requirements.txt          # then: pip install -U openmim && mim install mmcv
+# Pinned stack (Python 3.10, torch 2.1.0, mmcv 2.1.0). Order matters — see
+# claude_notes/SETUP.md. In short:
+pip install torch==2.1.0 torchvision==0.16.0 --index-url https://download.pytorch.org/whl/cu118
+pip install mmcv==2.1.0 -f https://download.openmmlab.com/mmcv/dist/cu118/torch2.1.0/index.html
+pip install -r requirements.txt
 # place DOTA at configs/base.yaml -> data.root (default ./data/dota_dataset)
 
 # train the OBB detector (config selects backbone / neck / etc.)

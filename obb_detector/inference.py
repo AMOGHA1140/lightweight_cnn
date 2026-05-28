@@ -20,8 +20,10 @@ except Exception:  # pragma: no cover - depends on environment
     _HAS_MMCV_NMS = False
 
 _MMCV_REQUIRED = (
-    "mmcv is required for rotated NMS. Install it on the training machine, e.g.\n"
-    "  pip install -U openmim && mim install mmcv"
+    "mmcv is required for rotated NMS. Install the prebuilt wheel matched to torch:\n"
+    "  pip install mmcv==2.1.0 "
+    "-f https://download.openmmlab.com/mmcv/dist/cu118/torch2.1.0/index.html\n"
+    "(needs torch 2.1.0 + Python 3.8-3.11; see claude_notes/SETUP.md)."
 )
 
 

@@ -26,7 +26,9 @@ The OBB detector training + evaluation was upgraded to production-grade (2026-05
   bias to `-log((1-p)/p)` (fixes the ~60k init focal loss). Wired via `model.head.prior_prob`.
 - **mmcv is REQUIRED** (user decision): `common/rotated_ops.box_iou_rotated` and
   `inference._nms_rotated` raise a clear ImportError if mmcv missing — the shapely/greedy
-  CPU fallback was removed. requirements.txt: mmcv>=2.0 (install via openmim), shapely dropped.
+  CPU fallback was removed. Pinned stack (prebuilt mmcv wheel, no source build): Python
+  3.10, torch 2.1.0 + torchvision 0.16.0, mmcv 2.1.0, numpy<2; shapely dropped. Install
+  torch then mmcv from their wheel indexes (NOT `mim install`) — see claude_notes/SETUP.md.
 - **No EMA** in the detector (EMA is pretraining-only, per user).
 - Config additions (configs/base.yaml): `train.{warmup_epochs:3, eta_min, eval_interval:1,
   seed:42}`, `eval.{iou_thresh:0.5, conf_thresh:0.05, nms_thresh:0.1}`, `model.head.prior_prob`.

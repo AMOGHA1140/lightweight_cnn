@@ -24,8 +24,11 @@ clone there, then follow `claude_notes/SETUP.md` (install `requirements.txt`, pl
 DOTA, train). The coding/dev box keeps only light libraries.
 
 **mmcv is required** for rotated IoU/NMS (loss assignment, NMS, mAP); the code raises a
-clear error if it is missing (no slow CPU fallback). Install with
-`pip install -U openmim && mim install mmcv`.
+clear error if it is missing (no slow CPU fallback). Prebuilt mmcv wheels exist only for
+a fixed matrix, so the stack is pinned: **Python 3.10, torch 2.1.0 + torchvision 0.16.0,
+mmcv 2.1.0, numpy<2** (Python 3.12+ / newer torch have no mmcv wheel and force a failing
+source build). Install torch first, then the prebuilt mmcv wheel — full ordered commands
+in `claude_notes/SETUP.md`. Do not use `mim install mmcv` (it downgrades setuptools).
 
 ## Configuration: YAML only (no env vars)
 

@@ -6,12 +6,17 @@ import as top-level modules.
 ## Dependencies
 
 ```bash
+# Pinned stack (Python 3.10, torch 2.1.0, mmcv 2.1.0); order matters. Full details
+# and the why are in claude_notes/SETUP.md.
+pip install torch==2.1.0 torchvision==0.16.0 --index-url https://download.pytorch.org/whl/cu118
+pip install mmcv==2.1.0 -f https://download.openmmlab.com/mmcv/dist/cu118/torch2.1.0/index.html
 pip install -r requirements.txt
 ```
 
-`mmcv` is **required** for rotated IoU + NMS (loss assignment, NMS, mAP). Install it
-matched to your torch/CUDA: `pip install -U openmim && mim install mmcv`. The code
-raises a clear error if mmcv is missing (no slow CPU fallback).
+`mmcv` is **required** for rotated IoU + NMS (loss assignment, NMS, mAP); the code raises
+a clear error if it is missing (no slow CPU fallback). Prebuilt mmcv wheels exist only
+for torch 2.1.0 and Python 3.8-3.11 — newer torch or Python 3.12+ force a failing source
+build, so do not bump those without checking the wheel index.
 
 ## Configuration (YAML, no env vars)
 

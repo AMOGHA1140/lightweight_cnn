@@ -1,24 +1,46 @@
 # Setup & run (training machine)
 
-How to bring this repo up on a fresh machine and train the baseline. Machine-agnostic;
-use that machine's Python (a venv/conda env with a CUDA-enabled PyTorch).
+How to bring this repo up on a fresh machine and train the baseline. Machine-agnostic
+(Linux or Windows), but the **versions are not optional**: mmcv ships prebuilt wheels
+only for a fixed (Python x torch x CUDA) matrix, and there is no wheel for new torch /
+Python 3.12+. Use the stack below and everything installs without compiling.
 
 ## 1. Clone + environment
+
+Tested, lab-standard stack (OpenMMLab 2.x / mmrotate):
+
+- **Python 3.10** — 3.8-3.11 work; **3.12+ has no prebuilt mmcv wheel**.
+- **torch 2.1.0 + torchvision 0.16.0** — newest torch with prebuilt mmcv wheels.
+- **mmcv 2.1.0** — prebuilt, no source build.
+- **numpy < 2** — torch 2.1 is built against numpy 1.x.
 
 ```bash
 git clone <repo-url> lightweight_cnn
 cd lightweight_cnn
-python -m venv .venv && source .venv/bin/activate    # or conda
+python3.10 -m venv .venv && source .venv/bin/activate    # Windows: .venv\Scripts\activate
+
+# 1. PyTorch (CUDA 11.8 build; swap cu118 -> cu121 if your driver needs it)
+pip install torch==2.1.0 torchvision==0.16.0 \
+    --index-url https://download.pytorch.org/whl/cu118
+
+# 2. mmcv -- prebuilt wheel for torch 2.1.0 + cu118 (rotated IoU/NMS). No compilation.
+pip install mmcv==2.1.0 \
+    -f https://download.openmmlab.com/mmcv/dist/cu118/torch2.1.0/index.html
+
+# 3. everything else
 pip install -r requirements.txt
 ```
 
-`requirements.txt` pulls torch/torchvision, numpy, Pillow, tqdm, tensorboard, thop,
-matplotlib, plus the YOLO-comparison extras. **mmcv is required** for rotated IoU/NMS
-(loss assignment, NMS, mAP) — install it matched to your torch/CUDA:
+**mmcv is required** for rotated IoU/NMS (loss assignment, NMS, mAP); the code raises a
+clear error if it is missing.
 
-```bash
-pip install -U openmim && mim install mmcv
-```
+Why pinned and why this order: installing torch first means step 2 fetches the matching
+prebuilt mmcv wheel; running `pip install -r requirements.txt` *before* step 2 (or on
+torch 2.12 / Python 3.12) makes pip try to build mmcv from source, which fails. Avoid
+`mim install mmcv` here — it downgrades setuptools and can break the build; the explicit
+`pip install ... -f <wheel index>` above is deterministic. Confirm the CUDA build:
+`python -c "import torch; print(torch.__version__, torch.cuda.is_available())"` should
+print `2.1.0+cu118 True`.
 
 Sanity-check the install without any dataset:
 
