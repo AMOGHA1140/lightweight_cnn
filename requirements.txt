@@ -1,48 +1,22 @@
-# ============================================================================
-# Install order matters. Do NOT just `pip install -r requirements.txt`:
-# torch, torchvision and mmcv must come from their own wheel indexes (below),
-# or pip will try to COMPILE mmcv from source and fail.
-#
-# Tested, lab-standard stack (OpenMMLab 2.x / mmrotate). It installs as prebuilt
-# wheels with no compilation. Constraints that actually matter:
-#   - Python 3.10  (3.8-3.11 OK; 3.12+ has NO prebuilt mmcv wheel)
-#   - torch 2.1.0  (newest torch with prebuilt mmcv wheels)
-#   - numpy < 2    (torch 2.1 is built against numpy 1.x)
-# CUDA 11.8 build shown; swap cu118 -> cu121 if your driver needs it.
-#
-#   # 1. PyTorch (CUDA 11.8)
-#   pip install torch==2.1.0 torchvision==0.16.0 \
-#       --index-url https://download.pytorch.org/whl/cu118
-#
-#   # 2. mmcv  (prebuilt wheel for torch 2.1.0 + cu118 -- no source build)
-#   pip install mmcv==2.1.0 \
-#       -f https://download.openmmlab.com/mmcv/dist/cu118/torch2.1.0/index.html
-#
-#   # 3. everything else
-#   pip install -r requirements.txt
-# ============================================================================
+# Core 
+torch==2.1.0
+torchvision==0.16.0
+numpy==1.26.4
+Pillow==10.2.0
+tqdm==4.66.1
 
-# --- Core (installed via the indexes above; pinned here for reference) ---
-# torch==2.1.0          # step 1 (CUDA wheel index)
-# torchvision==0.16.0   # step 1
-# mmcv==2.1.0           # step 2 (openmmlab wheel index) -- rotated IoU + NMS
+# FLOPS
+thop==0.1.1.post2209072238
 
-# --- Core (plain PyPI) ---
-numpy<2
-Pillow
-tqdm
-pyyaml
-mmengine>=0.8,<1.0      # mmcv 2.x runtime dependency
+tensorboard==2.14.0
 
-# --- FLOPs reporting ---
-thop
+opencv-python==4.9.0.80
 
-# --- Backbone pretraining: local logging ---
-tensorboard
+ultralytics==8.1.0
+pandas==2.1.4
+matplotlib==3.8.2
+seaborn==0.13.0
+pyyaml==6.0.1
 
-# --- Optional: secondary comparison pipelines (not needed for the OBB detector) ---
-opencv-python           # faster_rcnn experiment
-ultralytics             # yolo_compare benchmark
-pandas
-matplotlib
-seaborn
+# mmcv: do not pip install - run after this file:
+# pip install -U openmim && mim install mmcv
