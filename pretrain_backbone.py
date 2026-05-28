@@ -40,7 +40,8 @@ import time
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.amp import GradScaler, autocast
+from torch.amp import autocast
+from torch.cuda.amp import GradScaler
 from torch.optim.lr_scheduler import CosineAnnealingLR, LinearLR, SequentialLR
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
