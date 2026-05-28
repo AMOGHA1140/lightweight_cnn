@@ -7,8 +7,11 @@ Composition:
     deltas (``encode_obb``); the head predicts deltas, not absolute boxes.
   * objectness: binary cross-entropy over all anchors.
   * anchor assignment: each anchor takes its best-IoU GT, positive if IoU > 0.5.
-  * the three terms are summed with equal weight.
+  * the three terms are summed with configurable weights (cls/bbox/obj); the
+    per-term values returned for logging stay unweighted.
 """
+
+import math
 
 import torch
 import torch.nn as nn
@@ -28,13 +31,19 @@ def encode_obb(gt_boxes, anchors):
     dw = torch.log(gt_boxes[:, 2] / anchors[:, 2])
     dh = torch.log(gt_boxes[:, 3] / anchors[:, 3])
     da = gt_boxes[:, 4] - anchors[:, 4]
+    # Wrap angle delta into [-pi/2, pi/2): theta and theta+pi denote the same box.
+    da = (da + math.pi / 2) % math.pi - math.pi / 2
     return torch.stack([dx, dy, dw, dh, da], dim=1)
 
 
 class DetectionLoss(nn.Module):
-    def __init__(self, num_classes, alpha=0.25, gamma=2.0):
+    def __init__(self, num_classes, cls_weight=1.0, bbox_weight=2.0, obj_weight=1.0,
+                 alpha=0.25, gamma=2.0):
         super().__init__()
         self.num_classes = num_classes
+        self.cls_weight = cls_weight
+        self.bbox_weight = bbox_weight
+        self.obj_weight = obj_weight
         self.alpha = alpha
         self.gamma = gamma
         self.smooth_l1 = nn.SmoothL1Loss(reduction="none")
@@ -106,8 +115,11 @@ class DetectionLoss(nn.Module):
             total_reg_loss = total_reg_loss + reg_loss
             total_obj_loss = total_obj_loss + obj_loss
 
+        total_loss = (self.cls_weight * total_cls_loss
+                      + self.bbox_weight * total_reg_loss
+                      + self.obj_weight * total_obj_loss)
         return {
-            "total_loss": total_cls_loss + total_reg_loss + total_obj_loss,
+            "total_loss": total_loss,
             "cls_loss": total_cls_loss,
             "bbox_loss": total_reg_loss,
             "obj_loss": total_obj_loss,

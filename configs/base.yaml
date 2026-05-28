@@ -17,13 +17,13 @@ model:
     out_channels: 256
     smooth_conv: standard   # standard | gaconv
   head:
-    num_anchors: 9
+    num_anchors: 24         # = scales(2) * ratios(3) * angles(4); must match anchors below
     prior_prob: 0.01        # RetinaNet cls/obj bias init
 
 anchors:
-  level_scales: [[32], [64], [128]]
+  level_scales: [[32, 51], [64, 102], [128, 203]]   # 2 sub-octave scales/level (x2^(2/3))
   ratios: [0.5, 1.0, 2.0]
-  angles: [-60, 0, 60]      # degrees
+  angles: [-90, -45, 0, 45]                          # degrees; le90 range, 45-deg spacing
 
 train:
   epochs: 100
@@ -36,6 +36,10 @@ train:
   eta_min: 1.0e-6
   eval_interval: 1          # run mAP validation every N epochs (and on the last)
   seed: 42
+  loss_weights:             # per-term weights (YOLO-style emphasis on localization)
+    cls: 1.0
+    bbox: 2.0
+    obj: 1.0
 
 eval:
   iou_thresh: 0.5

@@ -1,9 +1,10 @@
 """DOTA dataset for the one-stage oriented (OBB) detector.
 
 Parses DOTA's 8-coordinate rotated quadrilateral labels and converts each to the
-5-parameter oriented box ``(cx, cy, w, h, angle)`` (angle in radians). Images are
-resized to ``img_size`` and ImageNet-normalised, and box coordinates are rescaled
-by the same per-axis factors so they match the resized image.
+5-parameter oriented box ``(cx, cy, w, h, angle)`` in the long-edge ``le90``
+convention: ``w`` is the long side and ``angle`` (radians) lies in ``[-pi/2, pi/2)``.
+Images are resized to ``img_size`` and ImageNet-normalised, and box coordinates are
+rescaled by the same per-axis factors so they match the resized image.
 """
 
 import math
@@ -80,6 +81,11 @@ class DOTADataset(Dataset):
                     w = math.hypot(xs[1] - xs[0], ys[1] - ys[0])
                     h = math.hypot(xs[2] - xs[1], ys[2] - ys[1])
                     angle = math.atan2(ys[1] - ys[0], xs[1] - xs[0])
+                    # Canonical long-edge (le90): w = long side, angle in [-pi/2, pi/2).
+                    if w < h:
+                        w, h = h, w
+                        angle += math.pi / 2
+                    angle = (angle + math.pi / 2) % math.pi - math.pi / 2
                     boxes.append([cx, cy, w, h, angle])
                     labels.append(CLASS2ID[class_name])
 

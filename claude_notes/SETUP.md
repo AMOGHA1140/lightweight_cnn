@@ -105,7 +105,9 @@ chosen by mAP. Each run writes a self-contained `runs/<name>_<YYYY_MM_DD-HHmm>/`
 (config snapshot, meta.json, metrics.csv, NOTES.md, `checkpoints/{best,last}.pth` —
 full state, `tb/`) and appends a row to `runs/README.md`.
 
-Watch training: `tensorboard --logdir runs/`. Resume an interrupted run:
+Watch training: `tensorboard --logdir runs/` (needs tensorboard >= 2.18 — older
+versions crash on the hparams route with recent protobuf; `pip install -U tensorboard`).
+Resume an interrupted run:
 
 ```bash
 python -m obb_detector.train --resume runs/<run_dir>

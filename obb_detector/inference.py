@@ -10,6 +10,8 @@ Turns raw head outputs into oriented boxes in image coordinates:
 ``decode_predictions`` returns one ``(boxes, scores, labels)`` triple per image.
 """
 
+import math
+
 import numpy as np
 import torch
 
@@ -37,6 +39,8 @@ def decode_obb(deltas, anchors):
     w = torch.exp(deltas[:, 2]) * anchors[:, 2]
     h = torch.exp(deltas[:, 3]) * anchors[:, 3]
     angle = deltas[:, 4] + anchors[:, 4]
+    # Keep angle in the canonical [-pi/2, pi/2) range.
+    angle = (angle + math.pi / 2) % math.pi - math.pi / 2
     return torch.stack([cx, cy, w, h, angle], dim=1)
 
 

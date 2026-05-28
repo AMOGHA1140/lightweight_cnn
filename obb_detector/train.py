@@ -103,7 +103,9 @@ def main(cfg, resume_dir=None):
 
     anchors_per_level = build_anchors(cfg, feature_sizes, img_size, device)
 
-    criterion = DetectionLoss(num_classes=len(DOTA_CLASSES))
+    lw = cfg.train.loss_weights
+    criterion = DetectionLoss(num_classes=len(DOTA_CLASSES), cls_weight=lw.cls,
+                              bbox_weight=lw.bbox, obj_weight=lw.obj)
     optimizer = optim.AdamW(build_param_groups(model, cfg.train.weight_decay),
                             lr=cfg.train.lr)
     scheduler = build_scheduler(optimizer, cfg.train.epochs, cfg.train.warmup_epochs,
