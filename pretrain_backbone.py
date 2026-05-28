@@ -414,7 +414,7 @@ def main():
     criterion = nn.CrossEntropyLoss(label_smoothing=args.label_smoothing)
     optimizer = optim.AdamW(build_param_groups(model, args.weight_decay), lr=args.lr)
     scheduler = build_scheduler(optimizer, args.epochs, args.warmup_epochs)
-    scaler = GradScaler(device.type) if use_scaler else None
+    scaler = GradScaler(enabled=(device.type == "cuda")) if use_scaler else None
     ema = None if args.no_ema else ModelEma(model, decay=args.ema_decay, device=device)
 
     start_epoch, best_acc = 1, 0.0

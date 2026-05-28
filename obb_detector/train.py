@@ -108,7 +108,7 @@ def main(cfg, resume_dir=None):
                             lr=cfg.train.lr)
     scheduler = build_scheduler(optimizer, cfg.train.epochs, cfg.train.warmup_epochs,
                                 eta_min=cfg.train.eta_min)
-    scaler = GradScaler(device.type)
+    scaler = GradScaler(enabled=(device.type == "cuda"))
 
     # Fresh run vs resume into an existing run dir.
     if resume_dir is not None:
