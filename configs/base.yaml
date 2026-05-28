@@ -2,7 +2,7 @@
 # and override only the keys they change.
 
 data:
-  root: ./data/dota_dataset
+  root: D:/Abhi/dota_dataset
   img_size: 1024
   batch_size: 4
   num_workers: 0
