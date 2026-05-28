@@ -1,0 +1,9 @@
+*__pycache__*
+test.ipynb
+claude_notes/
+RESEARCH_REFERENCE.md
+CLAUDE.md
+
+# Per-run experiment outputs; keep only the curated results index.
+runs/*
+!runs/README.md

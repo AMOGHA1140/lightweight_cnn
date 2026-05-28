@@ -1,0 +1,6 @@
+_base_: ../base.yaml
+
+experiment:
+  name: baseline
+  why: "ResNet-50 + standard 3x3 FPN smooth convs. Reference point for GAConv."
+  method: "ResNet-50 / FPN-standard"

@@ -1,0 +1,42 @@
+# Default configuration. Experiment files under configs/exp/ set `_base_: ../base.yaml`
+# and override only the keys they change.
+
+data:
+  root: ./data/dota_dataset
+  img_size: 1024
+  batch_size: 4
+  num_workers: 0
+
+model:
+  backbone:
+    name: resnet50          # resnet50 | custom
+    pretrained: true        # ImageNet weights (resnet50 only)
+    frozen_stages: 1        # freeze stem + layer1 (mmrotate DOTA convention)
+    norm_eval: true         # keep BatchNorm in eval mode
+  neck:
+    out_channels: 256
+    smooth_conv: standard   # standard | gaconv
+  head:
+    num_anchors: 9
+
+anchors:
+  level_scales: [[32], [64], [128]]
+  ratios: [0.5, 1.0, 2.0]
+  angles: [-60, 0, 60]      # degrees
+
+train:
+  epochs: 100
+  lr: 1.0e-3
+  weight_decay: 1.0e-4
+  optimizer: adamw
+  scheduler: cosine
+  grad_clip: 10.0
+
+paths:
+  pretrained_backbone: ./models/backbone_pretrained.pth
+  runs_dir: ./runs
+
+experiment:
+  name: baseline
+  why: "ResNet-50 + standard FPN neck on DOTA."
+  method: "ResNet-50 / FPN-standard"

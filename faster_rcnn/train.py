@@ -14,9 +14,10 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 from tqdm import tqdm
 
-import config
 from common.backbone import GhostTriRemoteXProPP
 from common.classes import DOTA_CLASSES, NUM_CLASSES
+from common.config import load_config
+from common.constants import IMAGENET_MEAN, IMAGENET_STD
 from common.model_utils import count_parameters
 from .dataset import DOTADataset, custom_collate_fn
 from .metrics import evaluate_model
@@ -45,25 +46,27 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
+    cfg = load_config("configs/base.yaml")
     batch_size, lr, num_epochs, img_size = 4, 1e-3, 50, 800
-    norm = transforms.Normalize(mean=config.NORM_MEAN, std=config.NORM_STD)
+    norm = transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD)
 
     train_loader = DataLoader(
-        DOTADataset(config.DATA_ROOT, "train", img_size, transforms=norm),
+        DOTADataset(cfg.data.root, "train", img_size, transforms=norm),
         batch_size=batch_size, shuffle=True, num_workers=0,
         collate_fn=custom_collate_fn, pin_memory=torch.cuda.is_available(), drop_last=True,
     )
     val_loader = DataLoader(
-        DOTADataset(config.DATA_ROOT, "val", img_size, transforms=norm),
+        DOTADataset(cfg.data.root, "val", img_size, transforms=norm),
         batch_size=batch_size, shuffle=False, num_workers=0,
         collate_fn=custom_collate_fn, pin_memory=torch.cuda.is_available(),
     )
     print(f"Train: {len(train_loader.dataset)}  Val: {len(val_loader.dataset)}")
 
     backbone = GhostTriRemoteXProPP(num_classes=200)
-    if os.path.exists(config.PRETRAINED_BACKBONE):
-        backbone.load_state_dict(torch.load(config.PRETRAINED_BACKBONE, map_location=device), strict=False)
-        print(f"Loaded pretrained backbone from {config.PRETRAINED_BACKBONE}")
+    pretrained = cfg.paths.pretrained_backbone
+    if os.path.exists(pretrained):
+        backbone.load_state_dict(torch.load(pretrained, map_location=device), strict=False)
+        print(f"Loaded pretrained backbone from {pretrained}")
     else:
         print(f"[warn] pretrained backbone not found; random init.")
 
@@ -74,7 +77,8 @@ def main():
     optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
 
-    save_dir = config.ensure_models_dir()
+    save_dir = "./models"
+    os.makedirs(save_dir, exist_ok=True)
     best_map = 0.0
     for epoch in range(num_epochs):
         t0 = time.time()

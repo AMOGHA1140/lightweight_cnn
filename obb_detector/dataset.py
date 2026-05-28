@@ -16,11 +16,12 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 
 from common.classes import CLASS2ID
-from config import NORM_MEAN, NORM_STD
+from common.constants import IMAGENET_MEAN, IMAGENET_STD
 
 
 class DOTADataset(Dataset):
-    def __init__(self, root, split="train", img_size=1024):
+    def __init__(self, root, split="train", img_size=1024,
+                 norm_mean=IMAGENET_MEAN, norm_std=IMAGENET_STD):
         self.img_size = img_size
         self.split = split
         if split == "train":
@@ -46,7 +47,7 @@ class DOTADataset(Dataset):
         self.transform = transforms.Compose([
             transforms.Resize((img_size, img_size)),
             transforms.ToTensor(),
-            transforms.Normalize(mean=NORM_MEAN, std=NORM_STD),
+            transforms.Normalize(mean=norm_mean, std=norm_std),
         ])
 
     def __len__(self):

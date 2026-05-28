@@ -47,8 +47,9 @@ from torch.utils.tensorboard import SummaryWriter
 from torchvision import datasets, transforms
 from tqdm import tqdm
 
-import config
 from common.backbone import GhostTriRemoteXProPP
+from common.config import load_config
+from common.constants import IMAGENET_MEAN, IMAGENET_STD
 
 
 # --------------------------------------------------------------------------- #
@@ -83,6 +84,8 @@ def build_parser():
     p.add_argument("--resume", default=None,
                    help="Resume from a checkpoint path / epoch dir, or 'auto'.")
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--config", default=None,
+                   help="YAML whose 'pretrain' keys override argparse defaults (CLI still wins).")
     return p
 
 
@@ -94,6 +97,19 @@ def provided_dests(parser):
         dests.add(opt_map.get(tok.split("=", 1)[0]))
     dests.discard(None)
     return dests
+
+
+def apply_config_file(args, parser):
+    """Override argparse defaults from a YAML 'pretrain' block (CLI values win)."""
+    cfg = load_config(args.config)
+    pretrain = cfg.get("pretrain")
+    if pretrain is None:
+        return args
+    keep = provided_dests(parser)
+    for k, v in pretrain.to_dict().items():
+        if hasattr(args, k) and k not in keep:
+            setattr(args, k, v)
+    return args
 
 
 def apply_resumed_config(args, parser):
@@ -126,7 +142,7 @@ def build_loaders(args):
     train_ops += [
         transforms.ColorJitter(0.2, 0.2, 0.2),
         transforms.ToTensor(),
-        transforms.Normalize(config.NORM_MEAN, config.NORM_STD),
+        transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
         transforms.RandomErasing(p=0.1),
     ]
     train_tf = transforms.Compose(train_ops)
@@ -134,7 +150,7 @@ def build_loaders(args):
         transforms.Resize(int(args.img_size * 256 / 224)),
         transforms.CenterCrop(args.img_size),
         transforms.ToTensor(),
-        transforms.Normalize(config.NORM_MEAN, config.NORM_STD),
+        transforms.Normalize(IMAGENET_MEAN, IMAGENET_STD),
     ])
     train_set = datasets.ImageFolder(os.path.join(args.data_dir, "train"), train_tf)
     val_set = datasets.ImageFolder(os.path.join(args.data_dir, "val"), val_tf)
@@ -358,6 +374,8 @@ class CSVLogger:
 def main():
     parser = build_parser()
     args = parser.parse_args()
+    if args.config:
+        apply_config_file(args, parser)
     if args.resume:
         apply_resumed_config(args, parser)
 

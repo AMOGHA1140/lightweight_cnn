@@ -1,0 +1,10 @@
+_base_: ../base.yaml
+
+experiment:
+  name: gaconv_neck
+  why: "GAConv replacing the 3x3 FPN smooth convs, vs the standard baseline."
+  method: "ResNet-50 / FPN-GAConv"
+
+model:
+  neck:
+    smooth_conv: gaconv

@@ -15,8 +15,8 @@ import pandas as pd
 import seaborn as sns
 from ultralytics import YOLO
 
-import config
 from common.classes import DOTA_CLASSES
+from common.config import load_config
 from .dataset_processor import DOTADatasetProcessor
 
 
@@ -153,12 +153,13 @@ class YOLOModelTrainer:
 
 
 def main():
-    epochs = config.NUM_EPOCHS
+    cfg = load_config("configs/base.yaml")
+    epochs = cfg.train.epochs
 
     print("YOLO Models Fine-tuning on DOTA Dataset\n" + "=" * 50)
-    # Train and validate on DATA_ROOT by default; point val_yaml at a separate
-    # processed dataset if you have one.
-    train_processor = DOTADatasetProcessor(config.DATA_ROOT)
+    # Train and validate on the dataset root by default; point val_yaml at a
+    # separate processed dataset if you have one.
+    train_processor = DOTADatasetProcessor(cfg.data.root)
     train_yaml = train_processor.prepare_dataset()
     val_yaml = train_yaml  # set to a separate processed dataset if you have one
 
