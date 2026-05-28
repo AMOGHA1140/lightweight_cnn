@@ -80,6 +80,8 @@ class DOTADataset(Dataset):
                     cx, cy = np.mean(xs), np.mean(ys)
                     w = math.hypot(xs[1] - xs[0], ys[1] - ys[0])
                     h = math.hypot(xs[2] - xs[1], ys[2] - ys[1])
+                    if w < 1.0 or h < 1.0:
+                        continue  # drop degenerate boxes: zero area -> NaN IoU / log
                     angle = math.atan2(ys[1] - ys[0], xs[1] - xs[0])
                     # Canonical long-edge (le90): w = long side, angle in [-pi/2, pi/2).
                     if w < h:

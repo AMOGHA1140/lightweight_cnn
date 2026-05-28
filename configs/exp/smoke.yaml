@@ -15,7 +15,7 @@ data:
 
 train:
   epochs: 10
-  warmup_epochs: 0
+  warmup_epochs: 1          # ramp lr to avoid early divergence (base uses 3)
   eval_interval: 1
 
 eval:

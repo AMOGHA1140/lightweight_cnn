@@ -28,8 +28,8 @@ def encode_obb(gt_boxes, anchors):
     """
     dx = (gt_boxes[:, 0] - anchors[:, 0]) / anchors[:, 2]
     dy = (gt_boxes[:, 1] - anchors[:, 1]) / anchors[:, 3]
-    dw = torch.log(gt_boxes[:, 2] / anchors[:, 2])
-    dh = torch.log(gt_boxes[:, 3] / anchors[:, 3])
+    dw = torch.log(gt_boxes[:, 2].clamp(min=1e-3) / anchors[:, 2])
+    dh = torch.log(gt_boxes[:, 3].clamp(min=1e-3) / anchors[:, 3])
     da = gt_boxes[:, 4] - anchors[:, 4]
     # Wrap angle delta into [-pi/2, pi/2): theta and theta+pi denote the same box.
     da = (da + math.pi / 2) % math.pi - math.pi / 2

@@ -42,6 +42,7 @@ def train_epoch(model, dataloader, optimizer, criterion, device, anchors_per_lev
                 epoch, total_epochs, scaler, grad_clip):
     model.train()
     totals = [0.0, 0.0, 0.0, 0.0]  # loss, cls, bbox, obj
+    processed, skipped = 0, 0
     pbar = tqdm(dataloader, desc=f"Epoch {epoch}/{total_epochs} [Train]", leave=False)
     for images, targets in pbar:
         images = images.to(device)
@@ -50,12 +51,22 @@ def train_epoch(model, dataloader, optimizer, criterion, device, anchors_per_lev
             predictions = model(images)
             loss_dict = criterion(predictions, targets, anchors_per_level, device)
             loss = loss_dict["total_loss"]
+        if not torch.isfinite(loss):
+            # A non-finite loss would NaN the grads and (via GradScaler skips) freeze
+            # training. Skip the batch and report which term blew up.
+            skipped += 1
+            if skipped <= 3:
+                print(f"[warn] non-finite loss skipped: cls={loss_dict['cls_loss'].item():.3f} "
+                      f"bbox={loss_dict['bbox_loss'].item():.3f} obj={loss_dict['obj_loss'].item():.3f}")
+            optimizer.zero_grad(set_to_none=True)
+            continue
         scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=grad_clip)
         scaler.step(optimizer)
         scaler.update()
 
+        processed += 1
         totals[0] += loss.item()
         totals[1] += loss_dict["cls_loss"].item()
         totals[2] += loss_dict["bbox_loss"].item()
@@ -66,8 +77,9 @@ def train_epoch(model, dataloader, optimizer, criterion, device, anchors_per_lev
             "BBox": f"{loss_dict['bbox_loss'].item():.4f}",
             "Obj": f"{loss_dict['obj_loss'].item():.4f}",
         })
-    n = len(dataloader)
-    return tuple(t / n for t in totals)
+    if skipped:
+        print(f"[warn] {skipped} batch(es) skipped this epoch (non-finite loss)")
+    return tuple(t / max(1, processed) for t in totals)
 
 
 @torch.no_grad()
